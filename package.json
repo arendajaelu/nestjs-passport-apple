@@ -1,0 +1,41 @@
+{
+  "name": "@arendajaelu/nestjs-passport-apple",
+  "version": "1.0.0",
+  "description": "Apple strategy for Passport in Nestjs",
+  "keywords": [
+    "passport",
+    "auth",
+    "authn",
+    "authentication",
+    "authz",
+    "authorization",
+    "apple",
+    "appleid"
+  ],
+  "main": "./src",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": {
+    "name": "arendajaelu",
+    "email": "arendajaelu@gmail.com",
+    "url": "https://github.com/arendajaelu"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/arendajaelu/nestjs-passport-apple.git"
+  },
+  "dependencies": {
+    "jsonwebtoken": "^8.5.1",
+    "jwks-rsa": "^2.1.4",
+    "oauth": "^0.9.15",
+    "passport-strategy": "^1.0.0",
+    "uid2": "1.0.0"
+  },
+  "devDependencies": {
+    "chai": "^4.3.6",
+    "chai-passport-strategy": "^3.0.0",
+  },
+
+}
