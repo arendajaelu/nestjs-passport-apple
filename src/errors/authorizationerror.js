@@ -5,7 +5,7 @@ class AuthorizationError extends Error {
      * @param {string} [uri]
      * @param {number} [status]
      */
-    constructor(message, code, uri, status) {
+    constructor(meesage, code, uri, status) {
         if (!status) {
             switch (code) {
                 case 'access_denied':
