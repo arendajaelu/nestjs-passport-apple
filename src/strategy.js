@@ -65,7 +65,7 @@ class AppleStrategy extends passport.Strategy {
         this._clientID = options.clientID;
         this._teamID = options.teamID;
         this._keyID = options.keyID;
-        this._key = options.key;
+        this._key = options.keyFilePath;
         this._authorizationURL = options.authorizationURL || 'https://appleid.apple.com/auth/authorize';
         this._tokenURL = options.tokenURL || 'https://appleid.apple.com/auth/token';
         this._callbackURL = options.callbackURL;
