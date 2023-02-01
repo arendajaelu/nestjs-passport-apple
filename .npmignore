@@ -3,3 +3,5 @@ test/
 .travis.yml
 .prettierrc
 .eslintrc
+.idea
+node_modules

@@ -1,6 +1,6 @@
 {
   "name": "@arendajaelu/nestjs-passport-apple",
-  "version": "1.0.0",
+  "version": "1.0.4",
   "description": "Apple strategy for Passport in Nestjs",
   "keywords": [
     "passport",
