@@ -1,24 +1,103 @@
-# Apple strategy for Passport in Nestjs
+# NestJS Passport Apple Strategy
 
-This is a passport strategy for Apple login with Nestjs's AuthGuard.
+This strategy integrates Apple login capabilities with NestJS's AuthGuard using Passport.
 
-Passport is the most popular node.js authentication library, well-known by the community and successfully used in many production applications. It's straightforward to integrate this library with a Nest application using the @nestjs/passport module. At a high level, Passport executes a series of steps to:
+## Features
 
-- Authenticate a user by verifying their "credentials" (such as username/password, JSON Web Token (JWT), or identity token from an Identity Provider)
+- Utilizes Apple's OAuth2.0 for user authentication
+- Uses NestJS's AuthGuard for easy integration
+- Provides strongly-typed Profile object
 
-- Manage authenticated state (by issuing a portable token, such as a JWT, or creating an Express session)
+## Installation
 
-- Attach information about the authenticated user to the Request object for further use in route handlers
+```bash
+npm install @arendajaelu/nestjs-passport-apple
+```
 
-Passport has a rich ecosystem of strategies that implement various authentication mechanisms. While simple in concept, the set of Passport strategies you can choose from is large and presents a lot of variety. Passport abstracts these varied steps into a standard pattern, and the @nestjs/passport module wraps and standardizes this pattern into familiar Nest constructs.
+## Usage
 
-You can find a complete documentation at [docs.nestjs.com/security/authentication](https://docs.nestjs.com/security/authentication).
+### Strategy Setup
 
+Here's a full example detailing all available options:
 
-## Install
+```typescript
+import { Injectable } from '@nestjs/common';
+import { AuthGuard, PassportStrategy } from '@nestjs/passport';
+import { Strategy, Profile } from '@arendajaelu/nestjs-passport-apple';
 
-    $ npm install @arendajaelu/nestjs-passport-apple
+const APPLE_STRATEGY_NAME = 'apple';
 
+@Injectable()
+export class AppleStrategy extends PassportStrategy(Strategy, APPLE_STRATEGY_NAME) {
+  constructor() {
+    super({
+      clientID: process.env.APPLE_OAUTH_CLIENT_ID,
+      teamID: process.env.APPLE_TEAMID,
+      keyID: process.env.APPLE_KEYID,
+      key: process.env.APPLE_KEY_CONTENTS,
+      // OR
+      keyFilePath: process.env.APPLE_KEYFILE_PATH,
+      callbackURL: process.env.APPLE_OAUTH_CALLBACK_URL
+      scope: ['email', 'name'],
+      passReqToCallback: false,
+    });
+  }
+
+  async validate(_accessToken: string, _refreshToken: string, profile: Profile) {
+    return {
+      emailAddress: profile.email,
+      firstName: profile.name?.firstName || '',
+      lastName: profile.name?.lastName || '',
+    };
+  }
+}
+
+@Injectable()
+export class AppleOAuthGuard extends AuthGuard(APPLE_STRATEGY_NAME) {}
+```
+
+> **Note**: Make sure to add `AppleStrategy` to the `providers` array in your module.
+
+### Using Guard in Controller
+
+```typescript
+import { Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
+import { AppleOAuthGuard } from './strategies/apple.strategy';
+
+@ApiTags('oauth')
+@Controller('oauth')
+export class OAuthController {
+  @Get('apple')
+  @UseGuards(AppleOAuthGuard)
+  async appleLogin() {}
+
+  @Post('apple/callback')
+  @UseGuards(AppleOAuthGuard)
+  async appleCallback(@Req() req) {
+    return req.user;
+  }
+}
+```
+
+### Strategy Options
+
+- `clientID`: Apple OAuth2.0 Client ID
+- `teamID`: Apple Developer Team ID
+- `keyID`: Apple Key ID
+- `key`: Contents of the Apple Key. If you want the library to load the contents, use `keyFilePath` instead.
+- `keyFilePath`: File path to Apple Key; library will load content using `fs.readFileSync`
+- `authorizationURL`: (Optional) Authorization URL; default is `https://appleid.apple.com/auth/authorize`
+- `tokenURL`: (Optional) Token URL; default is `https://appleid.apple.com/auth/token`
+- `scope`: (Optional) An array of scopes, e.g., `['email', 'name']`
+- `sessionKey`: (Optional) Session Key
+- `state`: (Optional) Should state parameter be used
+- `passReqToCallback`: (Optional) Should request be passed to the `validate` callback; default is `false`
+- `callbackURL`: (Optional) Callback URL
+
+### Validate Callback
+
+The `validate` callback is called after successful authentication and contains the `accessToken`, `refreshToken`, and `profile`.
 
 ## License
 

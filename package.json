@@ -1,6 +1,6 @@
 {
   "name": "@arendajaelu/nestjs-passport-apple",
-  "version": "1.0.4",
+  "version": "2.0.0",
   "description": "Apple strategy for Passport in Nestjs",
   "keywords": [
     "passport",
@@ -13,6 +13,7 @@
     "appleid"
   ],
   "main": "./src",
+  "types": "index.d.ts",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
