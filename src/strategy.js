@@ -1,3 +1,4 @@
+const fs = require('fs');
 const url = require('url');
 const querystring = require('querystring');
 
@@ -41,6 +42,7 @@ class AppleStrategy extends passport.Strategy {
      * @param {string} options.clientID
      * @param {string} options.teamID
      * @param {string} options.keyID
+     * @param {string} options.key
      * @param {string} options.keyFilePath
      * @param {string} [options.authorizationURL=https://appleid.apple.com/auth/authorize]
      * @param {string} [options.tokenURL=https://appleid.apple.com/auth/token]
@@ -56,7 +58,7 @@ class AppleStrategy extends passport.Strategy {
         if (!options.clientID) throw new TypeError('AppleStrategy requires a clientID option');
         if (!options.teamID) throw new TypeError('AppleStrategy requires a teamID option');
         if (!options.keyID) throw new TypeError('AppleStrategy requires a keyID option');
-        if (!options.keyFilePath) throw new TypeError('AppleStrategy requires a keyFilePath option');
+        if (!options.key && !!options.keyFilePath) throw new TypeError('AppleStrategy requires either the key or keyFilePath option');
 
         super();
         this.name = 'apple';
@@ -65,7 +67,13 @@ class AppleStrategy extends passport.Strategy {
         this._clientID = options.clientID;
         this._teamID = options.teamID;
         this._keyID = options.keyID;
-        this._key = options.keyFilePath;
+        
+        if(options.keyFilePath) {
+            this._key = fs.readFileSync(options.keyFilePath);
+        } else {
+            this._key = options.key
+        }
+        
         this._authorizationURL = options.authorizationURL || 'https://appleid.apple.com/auth/authorize';
         this._tokenURL = options.tokenURL || 'https://appleid.apple.com/auth/token';
         this._callbackURL = options.callbackURL;
