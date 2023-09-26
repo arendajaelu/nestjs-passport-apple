@@ -58,7 +58,7 @@ class AppleStrategy extends passport.Strategy {
         if (!options.clientID) throw new TypeError('AppleStrategy requires a clientID option');
         if (!options.teamID) throw new TypeError('AppleStrategy requires a teamID option');
         if (!options.keyID) throw new TypeError('AppleStrategy requires a keyID option');
-        if (!options.key && !!options.keyFilePath) throw new TypeError('AppleStrategy requires either the key or keyFilePath option');
+        if (!options.key && !options.keyFilePath) throw new TypeError('AppleStrategy requires either the key or keyFilePath option');
 
         super();
         this.name = 'apple';
