@@ -45,10 +45,10 @@ import { IncomingMessage } from 'http';
 declare class AppleStrategy extends PassportStrategy {
   constructor(options: Options, verify: VerifyCallback);
 
-  authenticate(req: IncomingMessage | Request, options?: AppleStrategy.AuthenticateOptions): void;
+  authenticate(req: IncomingMessage | Request, options?: AuthenticateOptions): void;
   verifyNonce(req: IncomingMessage | Request, nonce_supported: boolean, nonce: string, callback: (err: any, ok: boolean) => void): void;
   parseErrorResponse(body: string): Error;
 }
 
-export = AppleStrategy;
+export default AppleStrategy;
 export { AppleStrategy as Strategy };
