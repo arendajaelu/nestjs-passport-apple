@@ -13,7 +13,7 @@ export interface Profile {
   }
 }
 
-interface Options {
+export interface Options {
   clientID: string;
   teamID: string;
   keyID: string;
