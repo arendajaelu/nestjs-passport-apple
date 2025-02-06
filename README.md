@@ -1,9 +1,10 @@
 # NestJS Passport Apple Strategy
 
-This strategy integrates Apple login capabilities with NestJS's AuthGuard using Passport.
+This strategy seamlessly integrates Apple login capabilities into NestJS applications by leveraging Passport and its authentication framework.
 
 ## Features
 
+- Supports NestJS v10 and v11
 - Utilizes Apple's OAuth2.0 for user authentication
 - Uses NestJS's AuthGuard for easy integration
 - Provides strongly-typed Profile object
@@ -98,6 +99,12 @@ export class OAuthController {
 ### Validate Callback
 
 The `validate` callback is called after successful authentication and contains the `accessToken`, `refreshToken`, and `profile`.
+
+## Tutorial: Apple Login with NestJS 
+
+For a detailed tutorial on implementing Apple Login with NestJS, refer to the following article:  
+
+[**How to Implement Apple Login with NestJS in Seconds**](https://blog.devgenius.io/how-to-implement-apple-login-with-nestjs-in-seconds-b88f05abe847)  
 
 ## License
 
