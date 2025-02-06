@@ -13,7 +13,7 @@ export interface Profile {
   }
 }
 
-interface Options {
+export interface Options {
   clientID: string;
   teamID: string;
   keyID: string;
@@ -30,7 +30,7 @@ interface Options {
   verifyNonce?: boolean;
 }
 
-interface AuthenticateOptions {
+export interface AuthenticateOptions {
   callbackURL?: string;
   scope?: string[];
   state?: string;
