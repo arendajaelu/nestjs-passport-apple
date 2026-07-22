@@ -1,4 +1,4 @@
-const uid = require('uid2');
+const crypto = require('crypto');
 
 class SessionStore {
     /**
@@ -23,7 +23,7 @@ class SessionStore {
             );
 
         const key = this._key;
-        const state = uid(24);
+        const state = crypto.randomBytes(18).toString('base64url');
         if (!req.session[key]) req.session[key] = {};
         req.session[key].state = state;
         callback(null, state);

@@ -1,6 +1,4 @@
 const fs = require('fs');
-const url = require('url');
-const querystring = require('querystring');
 
 const passport = require('passport-strategy');
 const OAuth2 = require('oauth').OAuth2;
@@ -46,6 +44,7 @@ class AppleStrategy extends passport.Strategy {
      * @param {string} options.keyFilePath
      * @param {string} [options.authorizationURL=https://appleid.apple.com/auth/authorize]
      * @param {string} [options.tokenURL=https://appleid.apple.com/auth/token]
+     * @param {string} [options.revokeURL=https://appleid.apple.com/auth/revoke]
      * @param {Array<string>} [options.scope]
      * @param {string} [options.sessionKey]
      * @param {boolean} [options.state]
@@ -76,9 +75,10 @@ class AppleStrategy extends passport.Strategy {
         
         this._authorizationURL = options.authorizationURL || 'https://appleid.apple.com/auth/authorize';
         this._tokenURL = options.tokenURL || 'https://appleid.apple.com/auth/token';
+        this._revokeURL = options.revokeURL || 'https://appleid.apple.com/auth/revoke';
         this._callbackURL = options.callbackURL;
         this._scope = options.scope;
-        this._sessionKey = options.sessionKey || 'apple:' + url.parse(this._authorizationURL).hostname;
+        this._sessionKey = options.sessionKey || 'apple:' + new URL(this._authorizationURL).hostname;
         this._clientSecretExpiry = options.clientSecretExpiry || '5 minutes';
         this._verifyNonce = options.verifyNonce;
 
@@ -151,27 +151,11 @@ class AppleStrategy extends passport.Strategy {
                                 if (err) return this.error(err);
                                 if (!ok) return this.fail({ message: 'invalid nonce' });
 
-                                const profile = { id: jwtClaims.sub, provider: 'apple' };
-
-                                if (jwtClaims.email) {
-                                    profile.email = jwtClaims.email;
-                                }
-
-                                if (jwtClaims.email_verified) {
-                                    profile.emailVerified = jwtClaims.email_verified === 'true';
-                                }
-
-                                if (req.body.user) {
-                                    if (typeof req.body.user === 'object' && req.body.user.name) {
-                                        profile.name = req.body.user.name;
-                                    } else {
-                                        try {
-                                            const user = JSON.parse(req.body.user);
-                                            if (user && user.name) profile.name = user.name;
-                                        } catch (ex) {
-                                            return this.error(ex);
-                                        }
-                                    }
+                                let profile;
+                                try {
+                                    profile = this._buildProfile(jwtClaims, req.body.user);
+                                } catch (ex) {
+                                    return this.error(ex);
                                 }
 
                                 const verified = (err, user, info) => {
@@ -218,16 +202,136 @@ class AppleStrategy extends passport.Strategy {
             const state = options.state;
             if (state) {
                 params.state = state;
-                this.redirect(this._authorizationURL + '?' + querystring.stringify(params));
+                this.redirect(this._authorizationURL + '?' + new URLSearchParams(params).toString());
             } else {
                 this._stateStore.store(req, (err, state) => {
                     if (err) return this.error(err);
 
                     if (state) params.state = state;
-                    this.redirect(this._authorizationURL + '?' + querystring.stringify(params));
+                    this.redirect(this._authorizationURL + '?' + new URLSearchParams(params).toString());
                 });
             }
         }
+    }
+
+    /**
+     * Builds the profile object from verified ID token claims and the optional
+     * `user` field Apple posts on the user's first authorization.
+     *
+     * Apple sends `email_verified` and `is_private_email` as either a boolean
+     * or the strings 'true'/'false', so both forms are handled.
+     *
+     * @param {object} jwtClaims verified claims of the ID token
+     * @param {object|string} [bodyUser] the `user` field of the callback request body
+     * @returns {object} profile
+     */
+    _buildProfile(jwtClaims, bodyUser) {
+        const asBool = (value) => value === true || value === 'true';
+
+        const profile = { id: jwtClaims.sub, provider: 'apple' };
+
+        if (jwtClaims.email) {
+            profile.email = jwtClaims.email;
+        }
+
+        if (jwtClaims.email_verified !== undefined) {
+            profile.emailVerified = asBool(jwtClaims.email_verified);
+        }
+
+        if (jwtClaims.is_private_email !== undefined) {
+            profile.isPrivateEmail = asBool(jwtClaims.is_private_email);
+        }
+
+        if (bodyUser) {
+            if (typeof bodyUser === 'object' && bodyUser.name) {
+                profile.name = bodyUser.name;
+            } else if (typeof bodyUser === 'string') {
+                const user = JSON.parse(bodyUser);
+                if (user && user.name) profile.name = user.name;
+            }
+        }
+
+        return profile;
+    }
+
+    /**
+     * Verifies a Sign in with Apple identity token against Apple's public keys
+     * and returns its claims. Useful for backends that receive the identity
+     * token directly from a native iOS/macOS app instead of the web flow.
+     *
+     * @param {string} idToken identity token (JWT) issued by Apple
+     * @param {object} [options]
+     * @param {string|Array<string>} [options.audience] expected audience; defaults to the configured clientID
+     * @returns {Promise<object>} the verified token claims
+     */
+    verifyIdToken(idToken, options = {}) {
+        return new Promise((resolve, reject) => {
+            const verifyOpts = {
+                audience: options.audience || this._clientID,
+                issuer: 'https://appleid.apple.com',
+                algorithms: ['RS256']
+            };
+            jwt.verify(idToken, getAppleJWKSKey, verifyOpts, (err, jwtClaims) => {
+                if (err) return reject(err);
+                resolve(jwtClaims);
+            });
+        });
+    }
+
+    /**
+     * Exchanges a refresh token for a new access token, verifying that the
+     * user's Apple session is still valid. Apple recommends doing this at most
+     * once a day per user.
+     *
+     * @param {string} refreshToken refresh token obtained during authorization
+     * @returns {Promise<object>} token response ({ access_token, token_type, expires_in, id_token })
+     */
+    async refreshAccessToken(refreshToken) {
+        return this._tokenRequest(this._tokenURL, {
+            client_id: this._clientID,
+            client_secret: this._getClientSecret(),
+            grant_type: 'refresh_token',
+            refresh_token: refreshToken
+        }, 'Failed to refresh access token');
+    }
+
+    /**
+     * Revokes a user's refresh or access token, invalidating the associated
+     * user session. Required for account deletion flows per App Store Review
+     * Guideline 5.1.1(v).
+     *
+     * @param {string} token refresh token or access token to revoke
+     * @param {string} [tokenTypeHint=refresh_token] either 'refresh_token' or 'access_token'
+     * @returns {Promise<void>}
+     */
+    async revokeToken(token, tokenTypeHint = 'refresh_token') {
+        await this._tokenRequest(this._revokeURL, {
+            client_id: this._clientID,
+            client_secret: this._getClientSecret(),
+            token,
+            token_type_hint: tokenTypeHint
+        }, 'Failed to revoke token');
+    }
+
+    /**
+     * @param {string} endpoint
+     * @param {object} form
+     * @param {string} errorMessage
+     * @returns {Promise<object|undefined>} parsed JSON body, if any
+     */
+    async _tokenRequest(endpoint, form, errorMessage) {
+        const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'content-type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams(form).toString()
+        });
+
+        const body = await res.text();
+        if (!res.ok) {
+            throw this._createOAuthError(errorMessage, { statusCode: res.status, data: body });
+        }
+        if (!body) return undefined;
+        return JSON.parse(body);
     }
 
     /**

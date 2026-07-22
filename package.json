@@ -1,6 +1,6 @@
 {
   "name": "@arendajaelu/nestjs-passport-apple",
-  "version": "2.0.5",
+  "version": "2.1.0",
   "description": "Apple strategy for Passport in Nestjs",
   "keywords": [
     "passport",
@@ -12,10 +12,23 @@
     "apple",
     "appleid"
   ],
-  "main": "./src",
+  "main": "./src/index.js",
   "types": "index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./src/index.js"
+    }
+  },
+  "files": [
+    "src",
+    "index.d.ts"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test \"test/**/*.test.js\""
   },
   "author": {
     "name": "arendajaelu",
@@ -31,11 +44,6 @@
     "jsonwebtoken": "^9.0.2",
     "jwks-rsa": "^2.1.4",
     "oauth": "^0.9.15",
-    "passport-strategy": "^1.0.0",
-    "uid2": "1.0.0"
-  },
-  "devDependencies": {
-    "chai": "^4.3.6",
-    "chai-passport-strategy": "^3.0.0"
+    "passport-strategy": "^1.0.0"
   }
 }
