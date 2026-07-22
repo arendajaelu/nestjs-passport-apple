@@ -3,14 +3,22 @@
   "version": "2.1.0",
   "description": "Apple strategy for Passport in Nestjs",
   "keywords": [
+    "nestjs",
     "passport",
+    "passport-apple",
+    "sign-in-with-apple",
+    "apple-login",
+    "apple-oauth",
+    "oauth2",
     "auth",
     "authn",
     "authentication",
     "authz",
     "authorization",
     "apple",
-    "appleid"
+    "appleid",
+    "apple-signin",
+    "token-revocation"
   ],
   "main": "./src/index.js",
   "types": "index.d.ts",
@@ -28,7 +36,15 @@
     "node": ">=18.0.0"
   },
   "scripts": {
-    "test": "node --test \"test/**/*.test.js\""
+    "test": "node --test test/strategy.test.js test/integration.test.js",
+    "lint": "eslint src test/*.test.js",
+    "typecheck": "tsc --noEmit --strict index.d.ts",
+    "test:types": "sh scripts/test-types.sh"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "eslint": "^9.0.0",
+    "typescript": "^5.5.0"
   },
   "author": {
     "name": "arendajaelu",
