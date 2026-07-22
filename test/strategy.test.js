@@ -1,4 +1,16 @@
-const { test, describe, beforeEach, afterEach } = require('node:test');
+const { test, describe, beforeEach, afterEach, mock } = require('node:test');
+
+// Mocking Date via node:test timers is only supported on Node 20.4+; older
+// runtimes either lack mock.timers or only accept the legacy array signature.
+const hasDateMockTimers = (() => {
+    try {
+        mock.timers.enable({ apis: ['Date'] });
+        mock.timers.reset();
+        return true;
+    } catch {
+        return false;
+    }
+})();
 const assert = require('node:assert');
 const crypto = require('crypto');
 
@@ -242,7 +254,7 @@ describe('verifyIdToken', () => {
 });
 
 describe('client secret lifecycle', () => {
-    test('generates a fresh client secret after the previous one expires', (t) => {
+    test('generates a fresh client secret after the previous one expires', { skip: !hasDateMockTimers && 'requires Date mock timers (Node 20.4+)' }, (t) => {
         t.mock.timers.enable({ apis: ['Date'], now: 1_750_000_000_000 });
         const strategy = buildStrategy({ clientID: 'com.example.expiry', clientSecretExpiry: '60 seconds' });
 
