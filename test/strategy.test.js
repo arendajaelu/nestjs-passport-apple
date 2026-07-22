@@ -230,3 +230,83 @@ describe('verifyIdToken', () => {
         await assert.rejects(() => strategy.verifyIdToken('not-a-jwt'));
     });
 });
+
+describe('client secret lifecycle', () => {
+    test('generates a fresh client secret after the previous one expires', (t) => {
+        t.mock.timers.enable({ apis: ['Date'], now: 1_750_000_000_000 });
+        const strategy = buildStrategy({ clientID: 'com.example.expiry', clientSecretExpiry: '60 seconds' });
+
+        const first = strategy._getClientSecret();
+        assert.strictEqual(strategy._getClientSecret(), first);
+
+        t.mock.timers.setTime(1_750_000_000_000 + 120 * 1000);
+        const second = strategy._getClientSecret();
+        assert.notStrictEqual(second, first);
+
+        const decoded = require('jsonwebtoken').decode(second);
+        assert.ok(decoded.exp > 1_750_000_000_000 / 1000 + 120);
+    });
+
+    test('caches secrets separately per clientID even with the same keyID', () => {
+        const a = buildStrategy({ clientID: 'com.example.appA' });
+        const b = buildStrategy({ clientID: 'com.example.appB' });
+
+        const secretA = a._getClientSecret();
+        const secretB = b._getClientSecret();
+
+        assert.notStrictEqual(secretA, secretB);
+        const jwt = require('jsonwebtoken');
+        assert.strictEqual(jwt.decode(secretA).sub, 'com.example.appA');
+        assert.strictEqual(jwt.decode(secretB).sub, 'com.example.appB');
+    });
+});
+
+describe('state store', () => {
+    test('uses a custom store when provided', (t, done) => {
+        const calls = [];
+        const store = {
+            store(req, cb) {
+                calls.push('store');
+                cb(null, 'custom-state-value');
+            },
+            verify(req, providedState, cb) {
+                calls.push('verify:' + providedState);
+                cb(null, true);
+            }
+        };
+        const strategy = buildStrategy({ store });
+
+        strategy.redirect = (location) => {
+            assert.strictEqual(new URL(location).searchParams.get('state'), 'custom-state-value');
+            assert.deepStrictEqual(calls, ['store']);
+            done();
+        };
+        strategy.error = done;
+        strategy.authenticate({});
+    });
+
+    test('state:true rejects a callback whose state does not match the session', (t, done) => {
+        const strategy = buildStrategy({ state: true });
+        const req = {
+            session: { 'apple:appleid.apple.com': { state: 'stored-state' } },
+            body: { code: 'some-code', state: 'attacker-state' }
+        };
+        strategy.fail = (info, status) => {
+            assert.strictEqual(status, 403);
+            assert.match(info.message, /state/i);
+            done();
+        };
+        strategy.error = done;
+        strategy.success = () => done(new Error('should not succeed'));
+        strategy.authenticate(req);
+    });
+
+    test('state:true errors clearly when session support is missing', (t, done) => {
+        const strategy = buildStrategy({ state: true });
+        strategy.error = (err) => {
+            assert.match(err.message, /session/i);
+            done();
+        };
+        strategy.authenticate({});
+    });
+});

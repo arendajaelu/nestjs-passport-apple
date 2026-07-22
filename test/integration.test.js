@@ -45,45 +45,45 @@ const buildStrategy = (verify) =>
         verify
     );
 
-describe('full authentication flow against a mock Apple server', () => {
-    before(async () => {
-        tokenRequests = [];
-        server = http.createServer((req, res) => {
-            let body = '';
-            req.on('data', (chunk) => (body += chunk));
-            req.on('end', () => {
-                if (req.method === 'GET' && req.url === '/auth/keys') {
-                    const jwk = rsa.publicKey.export({ format: 'jwk' });
-                    res.setHeader('content-type', 'application/json');
-                    res.end(JSON.stringify({ keys: [{ ...jwk, kid: KID, use: 'sig', alg: 'RS256' }] }));
-                } else if (req.method === 'POST' && req.url === '/auth/token') {
-                    tokenRequests.push(new URLSearchParams(body));
-                    res.setHeader('content-type', 'application/json');
-                    res.end(
-                        JSON.stringify({
-                            access_token: 'mock-access-token',
-                            token_type: 'Bearer',
-                            expires_in: 3600,
-                            refresh_token: 'mock-refresh-token',
-                            id_token: signIdToken({
-                                email: 'user@privaterelay.appleid.com',
-                                email_verified: true,
-                                is_private_email: 'true'
-                            })
+before(async () => {
+    tokenRequests = [];
+    server = http.createServer((req, res) => {
+        let body = '';
+        req.on('data', (chunk) => (body += chunk));
+        req.on('end', () => {
+            if (req.method === 'GET' && req.url === '/auth/keys') {
+                const jwk = rsa.publicKey.export({ format: 'jwk' });
+                res.setHeader('content-type', 'application/json');
+                res.end(JSON.stringify({ keys: [{ ...jwk, kid: KID, use: 'sig', alg: 'RS256' }] }));
+            } else if (req.method === 'POST' && req.url === '/auth/token') {
+                tokenRequests.push(new URLSearchParams(body));
+                res.setHeader('content-type', 'application/json');
+                res.end(
+                    JSON.stringify({
+                        access_token: 'mock-access-token',
+                        token_type: 'Bearer',
+                        expires_in: 3600,
+                        refresh_token: 'mock-refresh-token',
+                        id_token: signIdToken({
+                            email: 'user@privaterelay.appleid.com',
+                            email_verified: true,
+                            is_private_email: 'true'
                         })
-                    );
-                } else {
-                    res.statusCode = 404;
-                    res.end();
-                }
-            });
+                    })
+                );
+            } else {
+                res.statusCode = 404;
+                res.end();
+            }
         });
-        await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-        baseURL = `http://127.0.0.1:${server.address().port}`;
     });
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    baseURL = `http://127.0.0.1:${server.address().port}`;
+});
 
-    after(() => new Promise((resolve) => server.close(resolve)));
+after(() => new Promise((resolve) => server.close(resolve)));
 
+describe('full authentication flow against a mock Apple server', () => {
     test('exchanges the code, verifies the ID token and builds the profile', (t, done) => {
         const strategy = buildStrategy((accessToken, refreshToken, profile, verified) => {
             try {
@@ -176,5 +176,89 @@ describe('full authentication flow against a mock Apple server', () => {
             { algorithm: 'RS256', keyid: KID, expiresIn: '-1m' }
         );
         await assert.rejects(() => strategy.verifyIdToken(expired), /expired/i);
+    });
+});
+
+describe('verifyIdToken nonce verification', () => {
+    test('resolves when the nonce matches', async () => {
+        const strategy = buildStrategy(() => {});
+        const claims = await strategy.verifyIdToken(signIdToken({ nonce: 'expected-nonce' }), {
+            nonce: 'expected-nonce'
+        });
+        assert.strictEqual(claims.nonce, 'expected-nonce');
+    });
+
+    test('rejects when the nonce does not match', async () => {
+        const strategy = buildStrategy(() => {});
+        await assert.rejects(
+            () => strategy.verifyIdToken(signIdToken({ nonce: 'tampered' }), { nonce: 'expected-nonce' }),
+            /nonce/i
+        );
+    });
+
+    test('rejects when a nonce is expected but the token has none', async () => {
+        const strategy = buildStrategy(() => {});
+        await assert.rejects(() => strategy.verifyIdToken(signIdToken({}), { nonce: 'expected-nonce' }), /nonce/i);
+    });
+});
+
+describe('verifyServerNotification', () => {
+    const signNotification = (claims, opts = {}) =>
+        jwt.sign(
+            {
+                iss: 'https://appleid.apple.com',
+                aud: CLIENT_ID,
+                jti: 'notification-id-1',
+                ...claims
+            },
+            (opts.key || rsa.privateKey).export({ type: 'pkcs1', format: 'pem' }),
+            { algorithm: 'RS256', keyid: opts.kid || KID, expiresIn: '10m' }
+        );
+
+    test('verifies a notification with events as a JSON string', async () => {
+        const strategy = buildStrategy(() => {});
+        const event = { type: 'consent-revoked', sub: 'apple-user-001', event_time: 1750000000000 };
+        const notification = await strategy.verifyServerNotification(
+            signNotification({ events: JSON.stringify(event) })
+        );
+        assert.deepStrictEqual(notification.events, event);
+        assert.strictEqual(notification.aud, CLIENT_ID);
+    });
+
+    test('verifies a notification with events as an object', async () => {
+        const strategy = buildStrategy(() => {});
+        const event = {
+            type: 'email-disabled',
+            sub: 'apple-user-001',
+            email: 'user@privaterelay.appleid.com',
+            is_private_email: 'true',
+            event_time: 1750000000000
+        };
+        const notification = await strategy.verifyServerNotification(signNotification({ events: event }));
+        assert.deepStrictEqual(notification.events, event);
+    });
+
+    test('rejects a notification signed with an unknown key', async () => {
+        const strategy = buildStrategy(() => {});
+        const rogue = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+        const forged = signNotification(
+            { events: JSON.stringify({ type: 'account-deleted', sub: 'x', event_time: 1 }) },
+            { key: rogue.privateKey, kid: 'unknown-kid' }
+        );
+        await assert.rejects(() => strategy.verifyServerNotification(forged));
+    });
+
+    test('rejects a notification for a different audience', async () => {
+        const strategy = buildStrategy(() => {});
+        const other = jwt.sign(
+            {
+                iss: 'https://appleid.apple.com',
+                aud: 'com.other.app',
+                events: JSON.stringify({ type: 'account-deleted', sub: 'x', event_time: 1 })
+            },
+            rsa.privateKey.export({ type: 'pkcs1', format: 'pem' }),
+            { algorithm: 'RS256', keyid: KID, expiresIn: '10m' }
+        );
+        await assert.rejects(() => strategy.verifyServerNotification(other), /audience/i);
     });
 });

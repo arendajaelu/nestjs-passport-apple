@@ -51,6 +51,7 @@ class AppleStrategy extends passport.Strategy {
      * @param {Array<string>} [options.scope]
      * @param {string} [options.sessionKey]
      * @param {boolean} [options.state]
+     * @param {object} [options.store] custom state store with store(req, cb) and verify(req, state, cb)
      * @param {boolean} [options.passReqToCallback=false]
      * @param {string} [options.callbackURL]
      * @param {function} verify
@@ -86,7 +87,9 @@ class AppleStrategy extends passport.Strategy {
         this._clientSecretExpiry = options.clientSecretExpiry || '5 minutes';
         this._verifyNonce = options.verifyNonce;
 
-        if (options.state) {
+        if (options.store) {
+            this._stateStore = options.store;
+        } else if (options.state) {
             this._stateStore = new SessionStateStore({ key: this._sessionKey });
         } else {
             this._stateStore = new NullStateStore();
@@ -279,9 +282,13 @@ class AppleStrategy extends passport.Strategy {
      * and returns its claims. Useful for backends that receive the identity
      * token directly from a native iOS/macOS app instead of the web flow.
      *
+     * The audience and nonce values must come from trusted server-side
+     * configuration or session state, never from the incoming request itself.
+     *
      * @param {string} idToken identity token (JWT) issued by Apple
      * @param {object} [options]
      * @param {string|Array<string>} [options.audience] expected audience; defaults to the configured clientID
+     * @param {string} [options.nonce] expected nonce; verification fails if the token's nonce claim does not match
      * @returns {Promise<object>} the verified token claims
      */
     verifyIdToken(idToken, options = {}) {
@@ -291,9 +298,44 @@ class AppleStrategy extends passport.Strategy {
                 issuer: 'https://appleid.apple.com',
                 algorithms: ['RS256']
             };
+            if (options.nonce) verifyOpts.nonce = options.nonce;
             jwt.verify(idToken, this._getJWKSKey.bind(this), verifyOpts, (err, jwtClaims) => {
                 if (err) return reject(err);
                 resolve(jwtClaims);
+            });
+        });
+    }
+
+    /**
+     * Verifies a server-to-server notification sent by Apple (the signed JWS
+     * in the `payload` field of the POSTed JSON body) and returns its claims
+     * with the `events` claim parsed into an object.
+     *
+     * Event types: 'email-enabled', 'email-disabled', 'consent-revoked',
+     * 'account-deleted'. The library only verifies and parses; acting on the
+     * event (deleting accounts, clearing sessions) is up to the application.
+     *
+     * @param {string} signedPayload the signed JWS from the notification body
+     * @returns {Promise<object>} the verified claims; `events` is an object like
+     *   { type, sub, event_time, email?, is_private_email? }
+     */
+    verifyServerNotification(signedPayload) {
+        return new Promise((resolve, reject) => {
+            const verifyOpts = {
+                audience: this._clientID,
+                issuer: 'https://appleid.apple.com',
+                algorithms: ['RS256']
+            };
+            jwt.verify(signedPayload, this._getJWKSKey.bind(this), verifyOpts, (err, claims) => {
+                if (err) return reject(err);
+                try {
+                    // Apple has delivered the events claim both as a JSON
+                    // string and as an object; normalize to an object.
+                    const events = typeof claims.events === 'string' ? JSON.parse(claims.events) : claims.events;
+                    resolve({ ...claims, events });
+                } catch (ex) {
+                    reject(ex);
+                }
             });
         });
     }
@@ -372,10 +414,11 @@ class AppleStrategy extends passport.Strategy {
     _getClientSecret() {
         // if our current secret has expired (with a few seconds grace), or
         // hasn't been generated yet, regenerate it:
-        const existing = clientSecretCache.get(this._keyID);
+        const cacheKey = this._keyID + ':' + this._teamID + ':' + this._clientID;
+        const existing = clientSecretCache.get(cacheKey);
         if (!existing || jwt.decode(existing).exp < Date.now() / 1000 + 5) {
             clientSecretCache.set(
-                this._keyID,
+                cacheKey,
                 jwt.sign({}, this._key, {
                     algorithm: 'ES256',
                     keyid: this._keyID,
@@ -386,7 +429,7 @@ class AppleStrategy extends passport.Strategy {
                 })
             );
         }
-        return clientSecretCache.get(this._keyID);
+        return clientSecretCache.get(cacheKey);
     }
 
     /**

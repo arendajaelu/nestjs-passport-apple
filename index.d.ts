@@ -20,6 +20,15 @@ export type VerifyNonceCallback = (
   callback: (err: any, ok: boolean) => void
 ) => void;
 
+export interface StateStore {
+  store(req: IncomingMessage | Request, callback: (err: any, state?: string) => void): void;
+  verify(
+    req: IncomingMessage | Request,
+    providedState: string,
+    callback: (err: any, ok?: boolean, state?: string | { message: string }) => void
+  ): void;
+}
+
 export interface Options {
   clientID: string;
   teamID: string;
@@ -33,6 +42,7 @@ export interface Options {
   scope?: string[];
   sessionKey?: string;
   state?: boolean;
+  store?: StateStore;
   passReqToCallback?: boolean;
   callbackURL?: string;
   clientSecretExpiry?: string;
@@ -61,6 +71,29 @@ export interface AppleIdTokenClaims {
   [claim: string]: unknown;
 }
 
+export type ServerNotificationEventType =
+  | 'email-enabled'
+  | 'email-disabled'
+  | 'consent-revoked'
+  | 'account-deleted';
+
+export interface ServerNotificationEvent {
+  type: ServerNotificationEventType;
+  sub: string;
+  event_time: number;
+  email?: string;
+  is_private_email?: boolean | 'true' | 'false';
+}
+
+export interface ServerNotification {
+  iss: string;
+  aud: string;
+  iat: number;
+  jti?: string;
+  events: ServerNotificationEvent;
+  [claim: string]: unknown;
+}
+
 export interface TokenResponse {
   access_token: string;
   token_type: string;
@@ -85,8 +118,18 @@ declare class AppleStrategy extends PassportStrategy {
    * Verifies a Sign in with Apple identity token against Apple's public keys
    * and returns its claims. Useful when a native iOS/macOS app sends the
    * identity token directly to your backend.
+   *
+   * The audience and nonce must come from trusted server-side configuration
+   * or session state — never from the incoming request itself.
    */
-  verifyIdToken(idToken: string, options?: { audience?: string | string[] }): Promise<AppleIdTokenClaims>;
+  verifyIdToken(idToken: string, options?: { audience?: string | string[]; nonce?: string }): Promise<AppleIdTokenClaims>;
+
+  /**
+   * Verifies a server-to-server notification JWS sent by Apple (the `payload`
+   * field of the notification body) and returns its claims with the `events`
+   * claim parsed. The application is responsible for acting on the event.
+   */
+  verifyServerNotification(signedPayload: string): Promise<ServerNotification>;
 
   /**
    * Exchanges a refresh token for a new access token, verifying that the
