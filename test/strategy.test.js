@@ -203,6 +203,16 @@ describe('token endpoint helpers', () => {
             return true;
         });
     });
+
+    test('refreshAccessToken wraps a malformed success response in an OAuth error', async () => {
+        mockFetch(200, 'not json at all');
+        const strategy = buildStrategy();
+        await assert.rejects(() => strategy.refreshAccessToken('some-token'), (err) => {
+            assert.strictEqual(err.name, 'InternalOAuthError');
+            assert.match(err.message, /malformed/i);
+            return true;
+        });
+    });
 });
 
 describe('client secret', () => {

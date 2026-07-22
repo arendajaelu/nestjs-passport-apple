@@ -393,7 +393,14 @@ class AppleStrategy extends passport.Strategy {
             throw this._createOAuthError(errorMessage, { statusCode: res.status, data: body });
         }
         if (!body) return undefined;
-        return JSON.parse(body);
+        try {
+            return JSON.parse(body);
+        } catch (_) {
+            throw new InternalOAuthError(errorMessage + ': malformed response body', {
+                statusCode: res.status,
+                data: body.slice(0, 500)
+            });
+        }
     }
 
     /**
