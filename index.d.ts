@@ -1,35 +1,48 @@
-/// <reference types="node" />
-
-import { Request } from 'express';
-
 export interface Profile {
-  id: string
-  provider: string
-  email?: string
-  emailVerified?: boolean
-  isPrivateEmail?: boolean
+  id: string;
+  provider: string;
+  email?: string;
+  emailVerified?: boolean;
+  isPrivateEmail?: boolean;
   name?: {
-    firstName: string
-    lastName: string
-  }
+    firstName: string;
+    lastName: string;
+  };
 }
 
-export type VerifyNonceCallback = (
-  req: IncomingMessage | Request,
+export type DoneCallback = (error: unknown, user?: unknown, info?: unknown) => void;
+
+export type VerifyCallback = (
+  accessToken: string,
+  refreshToken: string,
+  profile: Profile,
+  done: DoneCallback
+) => void | Promise<void>;
+
+export type VerifyCallbackWithRequest<TRequest = unknown> = (
+  request: TRequest,
+  accessToken: string,
+  refreshToken: string,
+  profile: Profile,
+  done: DoneCallback
+) => void | Promise<void>;
+
+export type VerifyNonceCallback<TRequest = unknown> = (
+  request: TRequest,
   nonce: string,
-  callback: (err: any, ok: boolean) => void
+  callback: (err: unknown, ok: boolean) => void
 ) => void;
 
-export interface StateStore {
-  store(req: IncomingMessage | Request, callback: (err: any, state?: string) => void): void;
+export interface StateStore<TRequest = unknown> {
+  store(request: TRequest, callback: (err: unknown, state?: string) => void): void;
   verify(
-    req: IncomingMessage | Request,
+    request: TRequest,
     providedState: string,
-    callback: (err: any, ok?: boolean, state?: string | { message: string }) => void
+    callback: (err: unknown, ok?: boolean, state?: string | { message: string }) => void
   ): void;
 }
 
-export interface Options {
+export interface Options<TRequest = unknown> {
   clientID: string;
   teamID: string;
   keyID: string;
@@ -42,11 +55,11 @@ export interface Options {
   scope?: string[];
   sessionKey?: string;
   state?: boolean;
-  store?: StateStore;
+  store?: StateStore<TRequest>;
   passReqToCallback?: boolean;
   callbackURL?: string;
   clientSecretExpiry?: string;
-  verifyNonce?: VerifyNonceCallback;
+  verifyNonce?: VerifyNonceCallback<TRequest>;
 }
 
 export interface AuthenticateOptions {
@@ -102,17 +115,39 @@ export interface TokenResponse {
   id_token: string;
 }
 
-export type VerifyCallback = (accessToken: string, refreshToken: string, profile: Profile, done: (error: any, user?: any) => void) => void;
+export interface VerifyIdTokenOptions {
+  audience?: string | string[];
+  nonce?: string;
+}
 
-import { Strategy as PassportStrategy } from 'passport-strategy';
-import { IncomingMessage } from 'http';
+/**
+ * Passport strategy implementing Sign in with Apple.
+ *
+ * The request type is generic so the library does not depend on any specific
+ * HTTP framework's type definitions. Consumers using `passReqToCallback` or a
+ * custom state store can bind their own request type:
+ *
+ *     new Strategy<Request>({..., passReqToCallback: true}, (req, ...) => {...})
+ */
+declare class AppleStrategy<TRequest = unknown> {
+  name: string;
 
-declare class AppleStrategy extends PassportStrategy {
-  constructor(options: Options, verify: VerifyCallback);
+  constructor(
+    options: Options<TRequest> & { passReqToCallback: true },
+    verify: VerifyCallbackWithRequest<TRequest>
+  );
+  constructor(options: Options<TRequest>, verify: VerifyCallback);
 
-  authenticate(req: IncomingMessage | Request, options?: AuthenticateOptions): void;
-  verifyNonce(req: IncomingMessage | Request, nonce_supported: boolean, nonce: string, callback: (err: any, ok: boolean) => void): void;
-  parseErrorResponse(body: string): Error;
+  authenticate(request: TRequest, options?: AuthenticateOptions): void;
+
+  verifyNonce(
+    request: TRequest,
+    nonce_supported: boolean,
+    nonce: string,
+    callback: (err: unknown, ok: boolean) => void
+  ): void;
+
+  parseErrorResponse(body: string): Error | null;
 
   /**
    * Verifies a Sign in with Apple identity token against Apple's public keys
@@ -122,27 +157,30 @@ declare class AppleStrategy extends PassportStrategy {
    * The audience and nonce must come from trusted server-side configuration
    * or session state — never from the incoming request itself.
    */
-  verifyIdToken(idToken: string, options?: { audience?: string | string[]; nonce?: string }): Promise<AppleIdTokenClaims>;
+  verifyIdToken(idToken: string, options?: VerifyIdTokenOptions): Promise<AppleIdTokenClaims>;
 
   /**
-   * Verifies a server-to-server notification JWS sent by Apple (the `payload`
-   * field of the notification body) and returns its claims with the `events`
-   * claim parsed. The application is responsible for acting on the event.
-   */
-  verifyServerNotification(signedPayload: string): Promise<ServerNotification>;
-
-  /**
-   * Exchanges a refresh token for a new access token, verifying that the
-   * user's Apple session is still valid.
+   * Validates a refresh token with Apple and obtains new tokens. An
+   * `invalid_grant` rejection means the token is invalid, expired, consumed,
+   * revoked, or does not match the configured client.
    */
   refreshAccessToken(refreshToken: string): Promise<TokenResponse>;
 
   /**
-   * Revokes a refresh or access token, invalidating the associated user
-   * session. Required for account deletion flows (App Store Review
-   * Guideline 5.1.1(v)).
+   * Revokes a refresh or access token, invalidating the associated Sign in
+   * with Apple authorization. Required for account deletion flows (App Store
+   * Review Guideline 5.1.1(v)). The application remains responsible for
+   * clearing its own sessions and data.
    */
   revokeToken(token: string, tokenTypeHint?: 'refresh_token' | 'access_token'): Promise<void>;
+
+  /**
+   * Verifies a server-to-server notification JWS sent by Apple (the `payload`
+   * field of the notification body) and returns its claims with the `events`
+   * claim parsed. Deduplicate on `jti` at the application level to guard
+   * against replayed deliveries.
+   */
+  verifyServerNotification(signedPayload: string): Promise<ServerNotification>;
 }
 
 export default AppleStrategy;
