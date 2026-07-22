@@ -1,17 +1,26 @@
-# NestJS Passport Apple Strategy
+# NestJS Passport Apple Strategy — Sign in with Apple for NestJS
 
-A Passport strategy that integrates Sign in with Apple into NestJS applications, covering the complete account lifecycle: web-based authorization, native-app identity token verification, refresh token validation, token revocation, and server-to-server notification processing.
+[![npm version](https://img.shields.io/npm/v/@arendajaelu/nestjs-passport-apple.svg)](https://www.npmjs.com/package/@arendajaelu/nestjs-passport-apple)
+[![npm downloads](https://img.shields.io/npm/dt/@arendajaelu/nestjs-passport-apple.svg)](https://www.npmjs.com/package/@arendajaelu/nestjs-passport-apple)
+[![license](https://img.shields.io/npm/l/@arendajaelu/nestjs-passport-apple.svg)](./LICENSE)
+[![node](https://img.shields.io/node/v/@arendajaelu/nestjs-passport-apple.svg)](https://nodejs.org)
+[![CI](https://github.com/arendajaelu/nestjs-passport-apple/actions/workflows/ci.yml/badge.svg)](https://github.com/arendajaelu/nestjs-passport-apple/actions/workflows/ci.yml)
+
+**Apple login for NestJS in minutes.** A Passport strategy that integrates **Sign in with Apple** into NestJS applications — Apple OAuth 2.0 authentication, identity token (JWT) verification, refresh token validation, token revocation for account deletion, and Apple's server-to-server notifications, all in one typed, tested package with **900k+ downloads**.
+
+Works with `@nestjs/passport` and `AuthGuard`, supports web apps (Services ID) and native iOS/macOS apps (App ID), and verifies every token against Apple's public keys before your code ever sees it.
 
 ## Features
 
-- Compatible with NestJS v10 and v11 through `@nestjs/passport` and `AuthGuard`
-- Verifies Apple identity tokens against Apple's published public keys (RS256, with issuer and audience validation) before invoking your `validate` callback
-- Provides a strongly typed `Profile` object, including Apple's `is_private_email` (Hide My Email) indicator
-- Verifies identity tokens submitted directly by native iOS/macOS applications, with nonce validation (`verifyIdToken`)
-- Validates stored refresh tokens and obtains new tokens (`refreshAccessToken`)
-- Revokes tokens to support account deletion, as required by App Store Review Guideline 5.1.1(v) (`revokeToken`)
-- Verifies Apple's signed server-to-server notifications (`verifyServerNotification`)
-- Optional CSRF protection via OAuth `state` generation and validation
+- 🍎 **Plug-and-play Apple login** — works with NestJS 10 & 11 via `AuthGuard`
+- 🔐 **Verified before you see it** — ID tokens are checked against Apple's public keys; your `validate` only receives trusted data
+- 🧾 **Typed `Profile`** — email, verification status, and Hide My Email flag included
+- 📱 **Native app support** — verify identity tokens from iOS/macOS apps, with nonce protection (`verifyIdToken`)
+- ♻️ **Session validation** — check that a user's Apple authorization is still alive (`refreshAccessToken`)
+- 🗑️ **Account deletion ready** — revoke tokens per App Store Guideline 5.1.1(v) (`revokeToken`)
+- 📨 **Server-to-server notifications** — verify Apple's signed account events (`verifyServerNotification`)
+- 🛡️ **CSRF protection** — optional OAuth `state` generation and validation
+- ✅ **Fully tested** — unit and integration suites run the complete flow against a mock Apple server, and published types are compiled by a real strict-mode NestJS consumer in CI
 
 ## Requirements
 
@@ -207,6 +216,33 @@ async appleNotifications(@Body() body: { payload: string }) {
 
 `verifyServerNotification` validates the JWS signature against Apple's public keys, along with the issuer and audience, and returns the claims with the `events` payload parsed. The library performs verification only; deciding how to act on each event remains the application's responsibility. Verification failures throw — treat such requests as forged and reject them.
 
+> **Replay protection**: a verified notification carries a `jti` (unique notification ID). Because a captured delivery could be replayed to your endpoint while still within its validity window, persist processed `jti` values (database, Redis, etc.) and reject duplicates before acting on an event:
+>
+> ```typescript
+> const accepted = await this.notificationStore.claim(notification.jti);
+> if (!accepted) {
+>   throw new ConflictException('Notification already processed');
+> }
+> ```
+
+### TypeScript: Request Typing
+
+The strategy's type declarations are fully self-contained — no `@types/express` or `@types/passport-strategy` required. The request type is generic, so `passReqToCallback` and custom state stores work with any HTTP framework's request type:
+
+```typescript
+import type { Request } from 'express'; // or FastifyRequest from 'fastify'
+
+export class AppleStrategy extends PassportStrategy(Strategy<Request>, 'apple') {
+  constructor() {
+    super({ /* options */, passReqToCallback: true });
+  }
+
+  validate(req: Request, accessToken: string, refreshToken: string, profile: Profile) {
+    return { id: profile.id };
+  }
+}
+```
+
 ## Testing
 
 The repository ships with a comprehensive automated test suite built on the Node.js native test runner — no additional test dependencies are required:
@@ -220,12 +256,46 @@ The suite covers two levels:
 - **Unit tests** (`test/strategy.test.js`): constructor validation, authorization redirect parameters, Apple error handling, profile claim parsing (including the string and boolean forms of `email_verified` and `is_private_email`), revocation and refresh request formats, client secret generation, expiry-driven regeneration, per-client secret caching, and state store behavior (session-based validation, mismatch rejection, and custom stores).
 - **Integration tests** (`test/integration.test.js`): the complete authentication flow executed against a local mock of Apple's token and JWKS endpoints with genuine RS256-signed identity tokens, along with negative cases — wrong audience, unknown signing key, expired tokens, nonce mismatches, and forged server notifications.
 
-## Tutorial
+## Tutorials
 
-For a step-by-step walkthrough of implementing Apple login with NestJS, see:
+For a complete, up-to-date walkthrough covering authentication, token revocation, and the full Sign in with Apple lifecycle:
+
+[**Apple Login with NestJS in 2026–2027: A Complete Guide to Authentication, Token Revocation and More**](https://medium.com/@joosepwong/apple-login-with-nestjs-in-2026-2027-a-complete-guide-to-authentication-token-revocation-and-9ec3f08863e5)
+
+The original walkthrough of the Apple Developer portal setup is also available:
 
 [**How to Implement Apple Login with NestJS in Seconds**](https://blog.devgenius.io/how-to-implement-apple-login-with-nestjs-in-seconds-b88f05abe847)
+
+## FAQ
+
+### How do I implement Apple login in NestJS?
+
+Install this package, register the strategy shown in [Strategy Setup](#strategy-setup) as a NestJS provider, and guard your routes with `AuthGuard('apple')`. The [complete guide](https://medium.com/@joosepwong/apple-login-with-nestjs-in-2026-2027-a-complete-guide-to-authentication-token-revocation-and-9ec3f08863e5) walks through every step, including the Apple Developer portal configuration.
+
+### How do I verify an Apple identity token from an iOS app on my NestJS backend?
+
+Use [`verifyIdToken`](#verifying-a-native-apps-identity-token) with your app's bundle ID as the audience. It validates the RS256 signature against Apple's JWKS, plus issuer, expiry, and (optionally) nonce.
+
+### How do I revoke Sign in with Apple tokens for account deletion?
+
+Call [`revokeToken`](#revoking-tokens-account-deletion) with the user's stored refresh token. This satisfies App Store Review Guideline 5.1.1(v), which requires apps offering account creation to also revoke Apple tokens on account deletion.
+
+### Why is the user's name missing after the first Apple login?
+
+Apple sends the `name` (and the `user` object) only on the user's **first** authorization. Persist it on first login — see [Profile Object](#profile-object).
+
+### Does this work with the new `private.icloud.com` Hide My Email addresses?
+
+Yes. The strategy exposes a verified `isPrivateEmail` flag, so you never need to match relay domains yourself — see [Private Relay Email Addresses](#private-relay-email-addresses).
+
+### Can my server get notified when a user revokes access or deletes their Apple Account?
+
+Yes — register a notification endpoint with Apple and verify each event with [`verifyServerNotification`](#processing-server-to-server-notifications).
 
 ## License
 
 Licensed under [MIT](./LICENSE).
+
+---
+
+*Keywords: Sign in with Apple, Apple login NestJS, NestJS Apple OAuth, passport-apple, Apple OAuth2 strategy, apple-signin, Apple ID authentication, verify Apple identity token, Apple token revocation, Apple server-to-server notifications, Hide My Email, NestJS authentication, Passport.js Apple strategy*
