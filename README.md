@@ -98,6 +98,7 @@ export class OAuthController {
 - `authorizationURL`: (Optional) Authorization URL; default is `https://appleid.apple.com/auth/authorize`
 - `tokenURL`: (Optional) Token URL; default is `https://appleid.apple.com/auth/token`
 - `revokeURL`: (Optional) Token revocation URL; default is `https://appleid.apple.com/auth/revoke`
+- `jwksURL`: (Optional) JWKS URL used to fetch Apple's public keys for ID token verification; default is `https://appleid.apple.com/auth/keys`
 - `scope`: (Optional) An array of scopes, e.g., `['email', 'name']`
 - `sessionKey`: (Optional) Session Key
 - `state`: (Optional) Should state parameter be used

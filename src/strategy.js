@@ -11,22 +11,24 @@ const AuthorizationError = require('./errors/authorizationerror');
 const TokenError = require('./errors/tokenerror');
 const InternalOAuthError = require('./errors/internaloautherror');
 
-const jwks_client = jwksClient({
-    strictSsl: true,
-    rateLimit: true,
-    cache: true,
-    cacheMaxEntries: 100,
-    cacheMaxAge: 1000 * 60 * 60 * 24,
-    jwksUri: 'https://appleid.apple.com/auth/keys'
-});
+// share one JWKS client (and therefore one key cache) per JWKS endpoint:
+const jwksClients = new Map();
 
-const getAppleJWKSKey = (header, callback) => {
-    jwks_client
-        .getSigningKey(header.kid)
-        .then((key) => {
-            callback(null, key && (key.publicKey || key.rsaPublicKey));
-        })
-        .catch((err) => callback(err));
+const getJWKSClient = (jwksUri) => {
+    if (!jwksClients.has(jwksUri)) {
+        jwksClients.set(
+            jwksUri,
+            jwksClient({
+                strictSsl: true,
+                rateLimit: true,
+                cache: true,
+                cacheMaxEntries: 100,
+                cacheMaxAge: 1000 * 60 * 60 * 24,
+                jwksUri
+            })
+        );
+    }
+    return jwksClients.get(jwksUri);
 };
 
 // the client secret for a given key is a signed JWT which is allowed to live
@@ -45,6 +47,7 @@ class AppleStrategy extends passport.Strategy {
      * @param {string} [options.authorizationURL=https://appleid.apple.com/auth/authorize]
      * @param {string} [options.tokenURL=https://appleid.apple.com/auth/token]
      * @param {string} [options.revokeURL=https://appleid.apple.com/auth/revoke]
+     * @param {string} [options.jwksURL=https://appleid.apple.com/auth/keys]
      * @param {Array<string>} [options.scope]
      * @param {string} [options.sessionKey]
      * @param {boolean} [options.state]
@@ -76,6 +79,7 @@ class AppleStrategy extends passport.Strategy {
         this._authorizationURL = options.authorizationURL || 'https://appleid.apple.com/auth/authorize';
         this._tokenURL = options.tokenURL || 'https://appleid.apple.com/auth/token';
         this._revokeURL = options.revokeURL || 'https://appleid.apple.com/auth/revoke';
+        this._jwksURL = options.jwksURL || 'https://appleid.apple.com/auth/keys';
         this._callbackURL = options.callbackURL;
         this._scope = options.scope;
         this._sessionKey = options.sessionKey || 'apple:' + new URL(this._authorizationURL).hostname;
@@ -89,6 +93,22 @@ class AppleStrategy extends passport.Strategy {
         }
 
         this._passReqToCallback = options.passReqToCallback;
+    }
+
+    /**
+     * Key resolver for jwt.verify: looks up the signing key for the token's
+     * `kid` in the configured JWKS endpoint.
+     *
+     * @param {object} header decoded JWT header
+     * @param {function} callback
+     */
+    _getJWKSKey(header, callback) {
+        getJWKSClient(this._jwksURL)
+            .getSigningKey(header.kid)
+            .then((key) => {
+                callback(null, key && (key.publicKey || key.rsaPublicKey));
+            })
+            .catch((err) => callback(err));
     }
 
     verifyNonce(req, nonce_supported, nonce, callback) {
@@ -142,7 +162,7 @@ class AppleStrategy extends passport.Strategy {
                             issuer: 'https://appleid.apple.com',
                             algorithms: ['RS256']
                         };
-                        jwt.verify(idToken, getAppleJWKSKey, verifyOpts, (err, jwtClaims) => {
+                        jwt.verify(idToken, this._getJWKSKey.bind(this), verifyOpts, (err, jwtClaims) => {
                             if (err) {
                                 return this.error(err);
                             }
@@ -271,7 +291,7 @@ class AppleStrategy extends passport.Strategy {
                 issuer: 'https://appleid.apple.com',
                 algorithms: ['RS256']
             };
-            jwt.verify(idToken, getAppleJWKSKey, verifyOpts, (err, jwtClaims) => {
+            jwt.verify(idToken, this._getJWKSKey.bind(this), verifyOpts, (err, jwtClaims) => {
                 if (err) return reject(err);
                 resolve(jwtClaims);
             });

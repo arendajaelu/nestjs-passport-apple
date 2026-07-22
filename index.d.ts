@@ -29,6 +29,7 @@ export interface Options {
   authorizationURL?: string;
   tokenURL?: string;
   revokeURL?: string;
+  jwksURL?: string;
   scope?: string[];
   sessionKey?: string;
   state?: boolean;
