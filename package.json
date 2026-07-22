@@ -37,6 +37,7 @@
   },
   "scripts": {
     "test": "node --test test/strategy.test.js test/integration.test.js",
+    "prepublishOnly": "npm run lint && npm test && npm run typecheck",
     "lint": "eslint src test/*.test.js",
     "typecheck": "tsc --noEmit --strict index.d.ts",
     "test:types": "sh scripts/test-types.sh"
